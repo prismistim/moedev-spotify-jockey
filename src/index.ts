@@ -22,6 +22,8 @@ import 'dayjs/locale/ja'
 
 dayjs.locale('ja')
 
+const PER_PAGE = 50;
+
 const mapNoteText = (url: string, userDisplayName: string) => {
   return `#listen_it Spotifyプレイリストに新しい曲が追加されました！\n(by ${userDisplayName})\n${url}`
 }
@@ -90,17 +92,27 @@ export default {
       updatedAt: ''
     }
 
-    for (let i = 0; i < playlist.tracks.total / 50; i++) {
-      const offset = playlist.tracks.total < 100 ? 50 * i : 50 * (playlist.tracks.total / 50 - 1 + i)
-      const res = await api.playlists.getPlaylistItems(env.SPOTIFY_PLAYLIST_ID, undefined, undefined, 50, offset)
+    const pageCount = playlist.tracks.total / PER_PAGE + 1
+
+    for (let i = 0; i < pageCount - 1; i++) {
+      const offset = playlist.tracks.total < 100 ? PER_PAGE * i : PER_PAGE * (pageCount - 1 + i)
+      const res = await api.playlists.getPlaylistItems(env.SPOTIFY_PLAYLIST_ID, undefined, undefined, PER_PAGE, offset)
 
       if (!res.items || res.items.length === 0) {
         console.log(`No items found in the playlist at offset ${offset}.`)
         continue
       }
 
+      const lastAddedAtCurrentPage = [...res.items].reverse()[0].added_at
+
       // 最終更新日時より前のものが取れれば次のページへ
-      if (dayjs(res.items.reverse()[0].added_at).isBefore(dayjs(lastUpdatedAt))) continue
+      if (
+        i < pageCount - 1
+        && (
+          dayjs(lastAddedAtCurrentPage).isBefore(dayjs(lastUpdatedAt))
+          || dayjs(lastAddedAtCurrentPage).isSame(dayjs(lastUpdatedAt))
+        )
+      ) continue
 
       // 初回
       if (!lastPostedTrackId && !lastUpdatedAt) {
@@ -115,6 +127,8 @@ export default {
       // 最後に取得した要素の日時より後のものを探す
       const index = res.items.findIndex(item => dayjs(item.added_at).isAfter(dayjs(lastUpdatedAt)))
       if (index === -1) break
+
+      console.log(`target music: ${res.items[index].track.name} by ${res.items[index].track.artists.map(artist => artist.name).join(', ')}`)
 
       target.url = res.items[index]?.track.external_urls.spotify
       target.trackId = res.items[index]?.track.id
