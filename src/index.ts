@@ -92,10 +92,12 @@ export default {
       updatedAt: ''
     }
 
-    const pageCount = playlist.tracks.total / PER_PAGE + 1
+    const pageCount = Math.floor(playlist.tracks.total / PER_PAGE) + 1
 
     for (let i = 0; i < pageCount - 1; i++) {
       const offset = playlist.tracks.total < 100 ? PER_PAGE * i : PER_PAGE * (pageCount - 1 + i)
+      if (offset > playlist.tracks.total) break
+
       const res = await api.playlists.getPlaylistItems(env.SPOTIFY_PLAYLIST_ID, undefined, undefined, PER_PAGE, offset)
 
       if (!res.items || res.items.length === 0) {
