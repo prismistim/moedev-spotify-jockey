@@ -9,10 +9,11 @@
 		"cf-typegen": "wrangler types"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "^2.1.2",
+		"@biomejs/biome": "^2.4.6",
 		"@spotify/web-api-ts-sdk": "^1.2.0",
-		"dayjs": "^1.11.13",
-		"typescript": "^5.5.2",
-		"wrangler": "^4.26.0"
+		"@types/node": "^25.4.0",
+		"dayjs": "^1.11.19",
+		"typescript": "^5.9.3",
+		"wrangler": "^4.71.0"
 	}
 }

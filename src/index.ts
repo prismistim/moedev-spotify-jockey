@@ -15,6 +15,7 @@
  * Learn more at https://developers.cloudflare.com/workers/
  */
 import { SpotifyApi } from '@spotify/web-api-ts-sdk'
+import { getPlaylistItemsCount, getPlaylistItems, getToken } from './lib/spotify'
 import type { Note } from './types'
 import { env } from 'cloudflare:workers'
 import dayjs from 'dayjs'
@@ -24,8 +25,8 @@ dayjs.locale('ja')
 
 const PER_PAGE = 50;
 
-const mapNoteText = (url: string, userDisplayName: string) => {
-  return `#listen_it Spotifyプレイリストに新しい曲が追加されました！\n(by ${userDisplayName})\n${url}`
+const mapNoteText = (url: string) => {
+  return `#listen_it Spotifyプレイリストに新しい曲が追加されました！\n${url}`
 }
 
 const createNote = async (text: Note['text']) => {
@@ -62,22 +63,23 @@ export default {
   // The scheduled handler is invoked at the interval set in our wrangler.jsonc's
   // [[triggers]] configuration.
   async scheduled(event, env, ctx): Promise<void> {
-    const api = SpotifyApi.withClientCredentials(
-      env.SPOTIFY_CLIENT_ID,
-      env.SPOTIFY_CLIENT_SECRET
-    )
+    const token = await getToken()
+    console.log(token)
+    if (!token) return
 
     const lastPostedTrackId = await env.MoedevSpotifyJockey.get('lastPostedTrackId')
     const lastUpdatedAt = await env.MoedevSpotifyJockey.get('lastUpdatedAt')
     console.log(`Last posted track ID: ${lastPostedTrackId}, Last updated at: ${lastUpdatedAt}`)
 
-    const playlist = await api.playlists.getPlaylist(env.SPOTIFY_PLAYLIST_ID)
+    const playlist = await getPlaylistItemsCount(token)
 
     if (!playlist) {
       throw new Error(`Playlist with ID ${env.SPOTIFY_PLAYLIST_ID} not found`)
     }
 
-    if (!playlist.tracks || playlist.tracks.total === 0) {
+    console.log(JSON.stringify(playlist))
+
+    if (!playlist.items || playlist.items.total === 0) {
       console.log('No tracks found in the playlist.')
       return
     }
@@ -92,13 +94,13 @@ export default {
       updatedAt: ''
     }
 
-    const pageCount = Math.floor(playlist.tracks.total / PER_PAGE) + 1
+    const pageCount = Math.floor(playlist.items.total / PER_PAGE) + 1
 
     for (let i = 0; i < pageCount - 1; i++) {
-      const offset = playlist.tracks.total < 100 ? PER_PAGE * i : PER_PAGE * (pageCount - 1 + i)
-      if (offset > playlist.tracks.total) break
+      const offset = playlist.items.total < 100 ? PER_PAGE * i : PER_PAGE * (pageCount - 1 + i)
+      if (offset > playlist.items.total) break
 
-      const res = await api.playlists.getPlaylistItems(env.SPOTIFY_PLAYLIST_ID, undefined, undefined, PER_PAGE, offset)
+      const res = await getPlaylistItems(token, PER_PAGE, offset)
 
       if (!res.items || res.items.length === 0) {
         console.log(`No items found in the playlist at offset ${offset}.`)
@@ -143,10 +145,8 @@ export default {
       return
     }
 
-    target.user.displayName = (await api.users.profile(target.user.id)).display_name
-
     console.log(`Posting new track: ${target.url} (ID: ${target.trackId})`)
-    await createNote(mapNoteText(target.url, target.user.displayName))
+    await createNote(mapNoteText(target.url))
 
     await env.MoedevSpotifyJockey.put('lastUpdatedAt', target.updatedAt)
     await env.MoedevSpotifyJockey.put('lastPostedTrackId', target.trackId)
