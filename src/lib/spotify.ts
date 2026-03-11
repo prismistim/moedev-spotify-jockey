@@ -15,15 +15,16 @@ const requestHeader = (token: string) => {
 }
 
 export const getToken = async () => {
+  const credentials = btoa(`${env.SPOTIFY_CLIENT_ID}:${env.SPOTIFY_CLIENT_SECRET}`)
   const formData = new URLSearchParams({
-    grant_type: 'client_credentials',
-    client_id: env.SPOTIFY_CLIENT_ID,
-    client_secret: env.SPOTIFY_CLIENT_SECRET
+    grant_type: 'refresh_token',
+    refresh_token: env.SPOTIFY_REFRESH_TOKEN
   })
   try {
     const res = await fetch('https://accounts.spotify.com/api/token', {
       method: 'POST',
       headers: {
+        'Authorization': `Basic ${credentials}`,
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: formData

@@ -13,20 +13,28 @@
  * `Env` object can be regenerated with `npm run cf-typegen`.
  *
  * Learn more at https://developers.cloudflare.com/workers/
- */
-import { SpotifyApi } from '@spotify/web-api-ts-sdk'
-import { getPlaylistItemsCount, getPlaylistItems, getToken } from './lib/spotify'
-import type { Note } from './types'
+*/
 import { env } from 'cloudflare:workers'
 import dayjs from 'dayjs'
 import 'dayjs/locale/ja'
+import {
+  getPlaylistItemsCount,
+  getPlaylistItems,
+  getToken
+} from './lib/spotify'
+import type { Note } from './types'
 
 dayjs.locale('ja')
 
-const PER_PAGE = 50;
+const PER_PAGE = 50
 
-const mapNoteText = (url: string) => {
-  return `#listen_it Spotifyプレイリストに新しい曲が追加されました！\n${url}`
+const mapNoteText = (
+  url: string,
+  track: string,
+  artist: string,
+  album: string
+) => {
+  return `#listen_it Spotifyプレイリストに新しい曲が追加されました！\n${artist} - ${track} (from: ${album})\n${url}`
 }
 
 const createNote = async (text: Note['text']) => {
@@ -67,9 +75,12 @@ export default {
     console.log(token)
     if (!token) return
 
-    const lastPostedTrackId = await env.MoedevSpotifyJockey.get('lastPostedTrackId')
+    const lastPostedTrackId =
+      await env.MoedevSpotifyJockey.get('lastPostedTrackId')
     const lastUpdatedAt = await env.MoedevSpotifyJockey.get('lastUpdatedAt')
-    console.log(`Last posted track ID: ${lastPostedTrackId}, Last updated at: ${lastUpdatedAt}`)
+    console.log(
+      `Last posted track ID: ${lastPostedTrackId}, Last updated at: ${lastUpdatedAt}`
+    )
 
     const playlist = await getPlaylistItemsCount(token)
 
@@ -87,9 +98,10 @@ export default {
     const target = {
       url: '',
       trackId: '',
-      user: {
-        id: '',
-        displayName: ''
+      meta: {
+        track: '',
+        artist: '',
+        album: ''
       },
       updatedAt: ''
     }
@@ -97,7 +109,10 @@ export default {
     const pageCount = Math.floor(playlist.items.total / PER_PAGE) + 1
 
     for (let i = 0; i < pageCount - 1; i++) {
-      const offset = playlist.items.total < 100 ? PER_PAGE * i : PER_PAGE * (pageCount - 1 + i)
+      const offset =
+        playlist.items.total < 100
+          ? PER_PAGE * i
+          : PER_PAGE * (pageCount - 1 + i)
       if (offset > playlist.items.total) break
 
       const res = await getPlaylistItems(token, PER_PAGE, offset)
@@ -111,32 +126,47 @@ export default {
 
       // 最終更新日時より前のものが取れれば次のページへ
       if (
-        i < pageCount - 1
-        && (
-          dayjs(lastAddedAtCurrentPage).isBefore(dayjs(lastUpdatedAt))
-          || dayjs(lastAddedAtCurrentPage).isSame(dayjs(lastUpdatedAt))
-        )
-      ) continue
+        i < pageCount - 1 &&
+        (dayjs(lastAddedAtCurrentPage).isBefore(dayjs(lastUpdatedAt)) ||
+          dayjs(lastAddedAtCurrentPage).isSame(dayjs(lastUpdatedAt)))
+      )
+        continue
 
       // 初回
       if (!lastPostedTrackId && !lastUpdatedAt) {
-        target.url = res.items[0].track.external_urls.spotify
-        target.trackId = res.items[0].track.id
-        target.user.id = res.items[0].added_by.id
+        target.url = res.items[0].item.external_urls.spotify
+        target.trackId = res.items[0].item.id
+        target.meta.track = res.items[0].item.name
+        target.meta.artist = res.items[0].item.artists
+          .map((artist) => artist.name)
+          .join(', ')
+        target.meta.album = res.items[0].item.album.name
         target.updatedAt = res.items[0].added_at
-        console.log(`No last posted track ID found, using first track: ${target.url}`)
+        console.log(
+          `No last posted track ID found, using first track: ${target.url}`
+        )
         break
       }
 
       // 最後に取得した要素の日時より後のものを探す
-      const index = res.items.findIndex(item => dayjs(item.added_at).isAfter(dayjs(lastUpdatedAt)))
+      const index = res.items.findIndex((item) =>
+        dayjs(item.added_at).isAfter(dayjs(lastUpdatedAt))
+      )
       if (index === -1) break
 
-      console.log(`target music: ${res.items[index].track.name} by ${res.items[index].track.artists.map(artist => artist.name).join(', ')}`)
+      console.log(res.items[index].item.artists)
 
-      target.url = res.items[index]?.track.external_urls.spotify
-      target.trackId = res.items[index]?.track.id
-      target.user.id = res.items[index]?.added_by.id
+      console.log(
+        `target music: ${res.items[index].item.name} by ${res.items[index].item.artists.map((artist) => artist.name).join(', ')}`
+      )
+
+      target.url = res.items[index]?.item.external_urls.spotify
+      target.trackId = res.items[index]?.item.id
+      target.meta.track = res.items[index]?.item.name
+      target.meta.artist = res.items[index]?.item.artists
+        .map((artist) => artist.name)
+        .join(', ')
+      target.meta.album = res.items[index]?.item.album.name
       target.updatedAt = res.items[index]?.added_at
     }
 
@@ -146,11 +176,19 @@ export default {
     }
 
     console.log(`Posting new track: ${target.url} (ID: ${target.trackId})`)
-    await createNote(mapNoteText(target.url))
+    await createNote(
+      mapNoteText(
+        target.url,
+        target.meta.track,
+        target.meta.artist,
+        target.meta.album
+      )
+    )
 
     await env.MoedevSpotifyJockey.put('lastUpdatedAt', target.updatedAt)
     await env.MoedevSpotifyJockey.put('lastPostedTrackId', target.trackId)
-    console.log(`Updated last posted track ID to: ${target.trackId}, last updated at: ${target.updatedAt}`)
+    console.log(
+      `Updated last posted track ID to: ${target.trackId}, last updated at: ${target.updatedAt}`
+    )
   }
 } satisfies ExportedHandler<Env>
-
